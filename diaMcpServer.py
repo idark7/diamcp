@@ -5,6 +5,14 @@ from __future__ import annotations
 import sys
 import json
 import time
+import io
+import base64
+import tempfile
+from pathlib import Path
+# Configure matplotlib for headless environments before importing pyplot
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 # Import FastMCP to create the Diabetes Interface Adapter server
 from mcp.server.fastmcp import FastMCP
 import requests
@@ -111,6 +119,57 @@ def streamentries(
         return f"Error streaming entries via REST polling: {e}"
 
     return json.dumps(events)
+
+
+@dia.tool()
+def plot_glucose(
+    times_ist: list[str] | None = None,
+    mgdl: list[float] | None = None,
+    title: str = "Glucose (mg/dL) – Last Hour (IST)",
+    y_min: float | None = 200,
+    y_max: float | None = 280,
+) -> str:
+    """Generate a PNG line plot of glucose readings and return it as base64."""
+
+    default_times = [
+        "01:09 AM",
+        "01:11 AM",
+        "01:13 AM",
+        "01:15 AM",
+        "01:17 AM",
+        "01:19 AM",
+        "01:21 AM",
+        "01:22 AM",
+        "01:23 AM",
+        "01:24 AM",
+    ]
+    default_values = [228, 235, 242, 245, 245, 243, 258, 262, 264, 263]
+
+    labels = times_ist or default_times
+    values = mgdl or default_values
+
+    if len(labels) != len(values):
+        return "Error: times_ist and mgdl must have the same length."
+    if not labels:
+        return "Error: provide at least one data point."
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.plot(labels, values, marker="o", color="#1f77b4")
+    ax.set_title(title)
+    ax.set_xlabel("Time (India)")
+    ax.set_ylabel("Glucose (mg/dL)")
+    if y_min is not None or y_max is not None:
+        ax.set_ylim(bottom=y_min if y_min is not None else min(values), top=y_max if y_max is not None else max(values))
+    ax.grid(True, linestyle="--", alpha=0.4)
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+
+    buffer = io.BytesIO()
+    fig.savefig(buffer, format="png")
+    plt.close(fig)
+    buffer.seek(0)
+    encoded = base64.b64encode(buffer.read()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
 
 
 # Only run the server when this file is executed directly
